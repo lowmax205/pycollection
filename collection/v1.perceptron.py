@@ -1,19 +1,19 @@
 """
-Combined (Single + Multi) letter recognition app using PySimpleGUI.
+Combined (Single + Multi) digit recognition app using PySimpleGUI.
 
 This script replaces separate single/multi scripts by offering a model toggle:
 - "Single" = single-layer perceptron (sigmoid)
 - "MLP"    = one-hidden-layer perceptron (sigmoid hidden + sigmoid output)
 
 Dataset format is compatible with the original scripts (JSON stored in *.txt):
-  {
-    "samples": [[...], ...],
-    "labels": [0, 1, ...],
-    "label_mapping": {"A": 0, ...},
-    "reverse_label_mapping": {"0": "A", ...},
-    "grid_rows": 7,
-    "grid_cols": 5
-  }
+    {
+        "samples": [[...], ...],
+        "labels": [0, 1, ...],
+        "label_mapping": {"0": 0, "1": 1, ...},
+        "reverse_label_mapping": {"0": "0", "1": "1", ...},
+        "grid_rows": 7,
+        "grid_cols": 5
+    }
 
 Dependencies:
   pip install numpy PySimpleGUI
@@ -59,7 +59,7 @@ if not hasattr(sg, "Window") or not hasattr(sg, "Graph"):
 GRID_ROWS = 7
 GRID_COLS = 5
 PIXEL_SIZE = 28
-DEFAULT_DATASET_FILE = "letters_dataset.txt"
+DEFAULT_DATASET_FILE = "digits_dataset.txt"
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
@@ -94,9 +94,9 @@ class Dataset:
         return self.grid_rows * self.grid_cols
 
     def add(self, letter: str, flat_pixels: np.ndarray) -> None:
-        letter = letter.strip().upper()
-        if len(letter) != 1 or not letter.isalpha():
-            raise ValueError("Label must be a single letter A-Z")
+        letter = letter.strip()
+        if len(letter) != 1 or not letter.isdigit():
+            raise ValueError("Label must be a single digit 0-9")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
@@ -121,9 +121,9 @@ class Dataset:
 
         lines = [
             f"Total samples: {len(self.samples)}",
-            f"Unique letters: {len(self.label_mapping)}",
+            f"Unique digits: {len(self.label_mapping)}",
             "",
-            "Letter distribution:",
+            "Digit distribution:",
         ]
         for letter in sorted(counts.keys()):
             lines.append(f"  {letter}: {counts[letter]} samples")
@@ -287,8 +287,8 @@ def run_app() -> None:
 
     # Left: drawing
     left_col = [
-        [sg.Text("Letter Recognition", font=("Segoe UI", 14, "bold"))],
-        [sg.Text("Draw (drag with mouse):")],
+        [sg.Text("Digit Recognition", font=("Segoe UI", 14, "bold"))],
+        [sg.Text("Draw a digit (drag with mouse):")],
         [graph],
         [
             sg.Button("Clear", key="-CLEAR-", size=(10, 1)),
@@ -299,7 +299,7 @@ def run_app() -> None:
             sg.Frame(
                 "Result",
                 [
-                    [sg.Text("Letter:", size=(7, 1)), sg.Text("—", key="-RESULT-", font=("Segoe UI", 24, "bold"))],
+                    [sg.Text("Digit:", size=(7, 1)), sg.Text("—", key="-RESULT-", font=("Segoe UI", 24, "bold"))],
                     [sg.Text("Confidence:", size=(10, 1)), sg.Text("", key="-CONF-")],
                     [sg.Text("Top-3:")],
                     [sg.Multiline("", key="-TOP3-", size=(22, 4), disabled=True, no_scrollbar=True)],
@@ -337,7 +337,7 @@ def run_app() -> None:
 
     layout = [[sg.Column(left_col, vertical_alignment="top"), sg.VSeparator(), sg.Column(right_col, vertical_alignment="top")]]
 
-    window = sg.Window("Letter Recognition", layout, finalize=True)
+    window = sg.Window("Digit Recognition", layout, finalize=True)
 
     grid_state = PixelGrid(GRID_ROWS, GRID_COLS)
     dataset = Dataset()
@@ -486,7 +486,7 @@ def run_app() -> None:
 
             vec = grid_state.to_flat().reshape(1, -1)
             if int(np.sum(vec)) == 0:
-                sg.popup("Draw a letter first.", title="Recognize")
+                sg.popup("Draw a digit first.", title="Recognize")
                 continue
 
             pred = active_model.predict(vec)[0]
