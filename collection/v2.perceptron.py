@@ -76,10 +76,10 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
-        letter = letter.strip().upper()
-        if len(letter) != 1 or not letter.isalpha():
-            raise ValueError("Label must be a single letter A-Z")
+    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
+        digit = digit.strip()
+        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
+            raise ValueError("Label must be a single digit 0-9")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
@@ -138,8 +138,8 @@ class Dataset:
 
         counts: Dict[str, int] = {}
         for label_idx in self.labels:
-            letter = self.reverse_label_mapping[int(label_idx)]
-            counts[letter] = counts.get(letter, 0) + 1
+            digit = self.reverse_label_mapping[int(label_idx)]
+            counts[digit] = counts.get(digit, 0) + 1
 
         lines = [
             f"Total samples: {len(self.samples)}",
@@ -147,8 +147,8 @@ class Dataset:
             "",
             "Digit distribution:",
         ]
-        for letter in sorted(counts.keys()):
-            lines.append(f"  {letter}: {counts[letter]} samples")
+        for digit in sorted(counts.keys()):
+            lines.append(f"  {digit}: {counts[digit]} samples")
         return "\n".join(lines)
 
 
@@ -460,10 +460,10 @@ class App:
 
     def add_sample(self) -> None:
         try:
-            label = self.label_entry.get().strip()
-            self.dataset.add(label, self.grid.to_flat())
+            digit = self.label_entry.get().strip()
+            self.dataset.add(digit, self.grid.to_flat())
             self._refresh_dataset_info()
-            self._log(f"✓ Added '{label}' to dataset ({len(self.dataset.samples)} samples)")
+            self._log(f"✓ Added '{digit}' to dataset ({len(self.dataset.samples)} samples)")
             self.label_entry.delete(0, END)
             self.clear_canvas()
         except Exception as e:
@@ -549,8 +549,8 @@ class App:
 
         if not errors:
             self._err_line.set_data([], [])
-            self._ax.relim()
-            self._ax.autoscale_view()
+            self._ax.set_xlim(0, 1)
+            self._ax.set_ylim(0, 1)
             self._plot_canvas.draw_idle()
             return
 
@@ -581,23 +581,23 @@ class App:
         pred = model.predict(vec)[0]
         idx = int(np.argmax(pred))
         conf = float(pred[idx]) * 100.0
-        letter = self.dataset.reverse_label_mapping.get(idx, "?")
+        digit = self.dataset.reverse_label_mapping.get(idx, "?")
 
-        self.result_var.set(letter)
+        self.result_var.set(digit)
         self.conf_var.set(f"Confidence: {conf:.1f}%")
 
         top3 = np.argsort(pred)[-3:][::-1]
         lines = []
         for rank, i in enumerate(top3, start=1):
-            ltr = self.dataset.reverse_label_mapping.get(int(i), "?")
-            lines.append(f"{rank}. {ltr}: {float(pred[int(i)]) * 100.0:.1f}%")
+            d = self.dataset.reverse_label_mapping.get(int(i), "?")
+            lines.append(f"{rank}. {d}: {float(pred[int(i)]) * 100.0:.1f}%")
 
         self.top3_text.configure(state=NORMAL)
         self.top3_text.delete("1.0", END)
         self.top3_text.insert("1.0", "\n".join(lines))
         self.top3_text.configure(state=DISABLED)
 
-        self._log(f"✓ Recognized as '{letter}' ({conf:.1f}% confidence)")
+        self._log(f"✓ Recognized as '{digit}' ({conf:.1f}% confidence)")
 
     def save_dataset(self) -> None:
         if not self.dataset.samples:

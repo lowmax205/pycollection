@@ -99,10 +99,10 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
-        letter = letter.strip().upper()
-        if len(letter) != 1 or not letter.isalpha():
-            raise ValueError("Label must be a single letter A-Z")
+    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
+        digit = digit.strip()
+        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
+            raise ValueError("Label must be a single digit 0-9")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
@@ -122,8 +122,8 @@ class Dataset:
 
         counts: Dict[str, int] = {}
         for label_idx in self.labels:
-            letter = self.reverse_label_mapping[int(label_idx)]
-            counts[letter] = counts.get(letter, 0) + 1
+            digit = self.reverse_label_mapping[int(label_idx)]
+            counts[digit] = counts.get(digit, 0) + 1
 
         lines = [
             f"Total samples: {len(self.samples)}",
@@ -131,8 +131,8 @@ class Dataset:
             "",
             "Digit distribution:",
         ]
-        for letter in sorted(counts.keys()):
-            lines.append(f"  {letter}: {counts[letter]} samples")
+        for digit in sorted(counts.keys()):
+            lines.append(f"  {digit}: {counts[digit]} samples")
         return "\n".join(lines)
 
     def to_json_obj(self) -> dict:
@@ -311,7 +311,7 @@ def run_app() -> None:
 
     # Left: drawing
     left_col = [
-        [sg.Text("Letter Recognition", font=("Segoe UI", 14, "bold"))],
+        [sg.Text("Digit Recognition", font=("Segoe UI", 14, "bold"))],
         [sg.Text("Draw (drag with mouse):")],
         [graph],
         [
@@ -366,12 +366,47 @@ def run_app() -> None:
 
     layout = [[sg.Column(left_col, vertical_alignment="top"), sg.VSeparator(), sg.Column(right_col, vertical_alignment="top")]]
 
-    window = sg.Window("Letter Recognition", layout, finalize=True)
+    window = sg.Window("Digit Recognition", layout, finalize=True)
 
     grid_state = PixelGrid(GRID_ROWS, GRID_COLS)
     dataset = Dataset()
     model_single: Optional[SinglePerceptron] = None
     model_mlp: Optional[MultiLayerPerceptron] = None
+
+    # Embedded Matplotlib plot (training error curve)
+    plot_fig = Figure(figsize=(4.2, 2.0), dpi=100)
+    plot_ax = plot_fig.add_subplot(111)
+    plot_ax.set_title("Training Error")
+    plot_ax.set_xlabel("Epoch")
+    plot_ax.set_ylabel("MSE")
+    (plot_err_line,) = plot_ax.plot([], [], linewidth=2)
+    plot_fig.tight_layout()
+
+    plot_canvas_elem = window["-PLOT-"]
+    plot_canvas_agg = FigureCanvasTkAgg(plot_fig, plot_canvas_elem.TKCanvas)
+    plot_canvas_agg.draw()
+    plot_canvas_agg.get_tk_widget().pack(side="top", fill="both", expand=1)
+
+    def update_error_plot(errors: List[float]) -> None:
+        if not errors:
+            plot_err_line.set_data([], [])
+            plot_ax.set_xlim(0, 1)
+            plot_ax.set_ylim(0, 1)
+            plot_canvas_agg.draw_idle()
+            return
+
+        xs = np.arange(1, len(errors) + 1, dtype=float)
+        ys = np.asarray(errors, dtype=float)
+        plot_err_line.set_data(xs, ys)
+
+        plot_ax.set_xlim(1, max(2, len(errors)))
+        ymin = float(np.min(ys))
+        ymax = float(np.max(ys))
+        if ymin == ymax:
+            ymax = ymin + 1e-6
+        pad = (ymax - ymin) * 0.10
+        plot_ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
+        plot_canvas_agg.draw_idle()
 
     def log(msg: str) -> None:
         window["-LOG-"].update(disabled=False)
@@ -432,10 +467,10 @@ def run_app() -> None:
 
         if event == "-ADD-":
             try:
-                label = (values.get("-LABEL-") or "").strip().upper()
-                dataset.add(label, grid_state.to_flat())
+                digit = (values.get("-LABEL-") or "").strip()
+                dataset.add(digit, grid_state.to_flat())
                 refresh_ds()
-                log(f"✓ Added '{label}' to dataset ({len(dataset.samples)} samples)")
+                log(f"✓ Added '{digit}' to dataset ({len(dataset.samples)} samples)")
                 window["-LABEL-"].update("")
                 grid_state.clear()
                 _draw_grid(window["-GRAPH-"], grid_state)
@@ -526,18 +561,18 @@ def run_app() -> None:
             pred = active_model.predict(vec)[0]
             idx = int(np.argmax(pred))
             conf = float(pred[idx]) * 100.0
-            letter = dataset.reverse_label_mapping.get(idx, "?")
+            digit = dataset.reverse_label_mapping.get(idx, "?")
 
-            window["-RESULT-"].update(letter)
+            window["-RESULT-"].update(digit)
             window["-CONF-"].update(f"{conf:.1f}%")
 
             top3 = np.argsort(pred)[-3:][::-1]
             lines = []
             for rank, i in enumerate(top3, start=1):
-                ltr = dataset.reverse_label_mapping.get(int(i), "?")
-                lines.append(f"{rank}. {ltr}: {float(pred[int(i)]) * 100.0:.1f}%")
+                d = dataset.reverse_label_mapping.get(int(i), "?")
+                lines.append(f"{rank}. {d}: {float(pred[int(i)]) * 100.0:.1f}%")
             window["-TOP3-"].update("\n".join(lines))
-            log(f"✓ Recognized as '{letter}' ({conf:.1f}% confidence)")
+            log(f"✓ Recognized as '{digit}' ({conf:.1f}% confidence)")
 
         if event == "-SAVE-":
             if not dataset.samples:

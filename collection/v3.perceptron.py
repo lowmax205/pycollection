@@ -1,6 +1,5 @@
 """
 Combined (Single + MLP) digit recognition app using standard tkinter/ttk.
-Combined (Single + MLP) digit recognition app using standard tkinter/ttk.
 
 This is the "no extra UI libs" version.
 Model toggle:
@@ -131,19 +130,17 @@ class Dataset:
 
         counts: Dict[str, int] = {}
         for label_idx in self.labels:
-            letter = self.reverse_label_mapping[int(label_idx)]
-            counts[letter] = counts.get(letter, 0) + 1
+            digit = self.reverse_label_mapping[int(label_idx)]
+            counts[digit] = counts.get(digit, 0) + 1
 
         lines = [
             f"Total samples: {len(self.samples)}",
             f"Unique digits: {len(self.label_mapping)}",
-            f"Unique digits: {len(self.label_mapping)}",
             "",
             "Digit distribution:",
-            "Digit distribution:",
         ]
-        for letter in sorted(counts.keys()):
-            lines.append(f"  {letter}: {counts[letter]} samples")
+        for digit in sorted(counts.keys()):
+            lines.append(f"  {digit}: {counts[digit]} samples")
         return "\n".join(lines)
 
 
@@ -236,7 +233,6 @@ class App:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Digit Recognition")
-        self.root.title("Digit Recognition")
         self.root.geometry("1100x680")
         self.root.minsize(980, 600)
 
@@ -289,7 +285,6 @@ class App:
 
         header = ttk.Frame(container)
         header.pack(fill=tk.X)
-        ttk.Label(header, text="Digit Recognition", font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
         ttk.Label(header, text="Digit Recognition", font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
 
         main = ttk.Frame(container)
@@ -476,10 +471,10 @@ class App:
 
     def add_sample(self) -> None:
         try:
-            label = self.label_entry.get().strip()
-            self.dataset.add(label, self.grid.to_flat())
+            digit = self.label_entry.get().strip()
+            self.dataset.add(digit, self.grid.to_flat())
             self._refresh_dataset_info()
-            self._log(f"✓ Added '{label}' to dataset ({len(self.dataset.samples)} samples)")
+            self._log(f"✓ Added '{digit}' to dataset ({len(self.dataset.samples)} samples)")
             self.label_entry.delete(0, tk.END)
             self.clear_canvas()
         except Exception as e:
@@ -565,8 +560,8 @@ class App:
 
         if not errors:
             self._err_line.set_data([], [])
-            self._ax.relim()
-            self._ax.autoscale_view()
+            self._ax.set_xlim(0, 1)
+            self._ax.set_ylim(0, 1)
             self._plot_canvas.draw_idle()
             return
 
@@ -592,29 +587,28 @@ class App:
         vec = self.grid.to_flat().reshape(1, -1)
         if int(np.sum(vec)) == 0:
             messagebox.showwarning("Recognize", "Draw a digit first.")
-            messagebox.showwarning("Recognize", "Draw a digit first.")
             return
 
         pred = model.predict(vec)[0]
         idx = int(np.argmax(pred))
         conf = float(pred[idx]) * 100.0
-        letter = self.dataset.reverse_label_mapping.get(idx, "?")
+        digit = self.dataset.reverse_label_mapping.get(idx, "?")
 
-        self.result_var.set(letter)
+        self.result_var.set(digit)
         self.conf_var.set(f"Confidence: {conf:.1f}%")
 
         top3 = np.argsort(pred)[-3:][::-1]
         lines = []
         for rank, i in enumerate(top3, start=1):
-            ltr = self.dataset.reverse_label_mapping.get(int(i), "?")
-            lines.append(f"{rank}. {ltr}: {float(pred[int(i)]) * 100.0:.1f}%")
+            d = self.dataset.reverse_label_mapping.get(int(i), "?")
+            lines.append(f"{rank}. {d}: {float(pred[int(i)]) * 100.0:.1f}%")
 
         self.top3.configure(state=tk.NORMAL)
         self.top3.delete("1.0", tk.END)
         self.top3.insert("1.0", "\n".join(lines))
         self.top3.configure(state=tk.DISABLED)
 
-        self._log(f"✓ Recognized as '{letter}' ({conf:.1f}% confidence)")
+        self._log(f"✓ Recognized as '{digit}' ({conf:.1f}% confidence)")
 
     def save_dataset(self) -> None:
         if not self.dataset.samples:
