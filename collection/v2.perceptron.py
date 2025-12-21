@@ -46,7 +46,7 @@ from tkinter.scrolledtext import ScrolledText
 GRID_ROWS = 7
 GRID_COLS = 5
 CELL_SIZE = 34
-DEFAULT_DATASET_FILE = "letters_dataset.txt"
+DEFAULT_DATASET_FILE = "digits_dataset.txt"
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
@@ -76,10 +76,10 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
-        digit = digit.strip()
-        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
-            raise ValueError("Label must be a single digit 0-9")
+    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
+        letter = letter.strip().upper()
+        if len(letter) != 1 or not letter.isalpha():
+            raise ValueError("Label must be a single letter A-Z")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
@@ -276,7 +276,7 @@ class App:
         right.pack(side=RIGHT, fill=BOTH, expand=True)
 
         tb.Label(left, text="Draw", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-        tb.Label(left, text="Click/drag to paint pixels (5x7)").pack(anchor="w", pady=(0, 6))
+        tb.Label(left, text="Click/drag to paint digits (5x7)").pack(anchor="w", pady=(0, 6))
 
         self.canvas = tk.Canvas(left, width=GRID_COLS * CELL_SIZE, height=GRID_ROWS * CELL_SIZE, bg="white", highlightthickness=1)
         self.canvas.pack(pady=(0, 8))
@@ -460,7 +460,7 @@ class App:
 
     def add_sample(self) -> None:
         try:
-            label = self.label_entry.get().strip().upper()
+            label = self.label_entry.get().strip()
             self.dataset.add(label, self.grid.to_flat())
             self._refresh_dataset_info()
             self._log(f"✓ Added '{label}' to dataset ({len(self.dataset.samples)} samples)")

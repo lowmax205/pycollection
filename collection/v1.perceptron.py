@@ -6,14 +6,14 @@ This script replaces separate single/multi scripts by offering a model toggle:
 - "MLP"    = one-hidden-layer perceptron (sigmoid hidden + sigmoid output)
 
 Dataset format is compatible with the original scripts (JSON stored in *.txt):
-  {
-    "samples": [[...], ...],
-    "labels": [0, 1, ...],
-    "label_mapping": {"A": 0, ...},
-    "reverse_label_mapping": {"0": "A", ...},
-    "grid_rows": 7,
-    "grid_cols": 5
-  }
+    {
+        "samples": [[...], ...],
+        "labels": [0, 1, ...],
+        "label_mapping": {"0": 0, "1": 1, ...},
+        "reverse_label_mapping": {"0": "0", "1": "1", ...},
+        "grid_rows": 7,
+        "grid_cols": 5
+    }
 
 Dependencies:
     pip install numpy PySimpleGUI matplotlib
@@ -65,7 +65,7 @@ if not hasattr(sg, "Window") or not hasattr(sg, "Graph"):
 GRID_ROWS = 7
 GRID_COLS = 5
 PIXEL_SIZE = 28
-DEFAULT_DATASET_FILE = "letters_dataset.txt"
+DEFAULT_DATASET_FILE = "digits_dataset.txt"
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
@@ -99,10 +99,10 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
-        digit = digit.strip()
-        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
-            raise ValueError("Label must be a single digit 0-9")
+    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
+        letter = letter.strip().upper()
+        if len(letter) != 1 or not letter.isalpha():
+            raise ValueError("Label must be a single letter A-Z")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
@@ -311,7 +311,7 @@ def run_app() -> None:
 
     # Left: drawing
     left_col = [
-        [sg.Text("Digit Recognition", font=("Segoe UI", 14, "bold"))],
+        [sg.Text("Letter Recognition", font=("Segoe UI", 14, "bold"))],
         [sg.Text("Draw (drag with mouse):")],
         [graph],
         [
@@ -366,41 +366,7 @@ def run_app() -> None:
 
     layout = [[sg.Column(left_col, vertical_alignment="top"), sg.VSeparator(), sg.Column(right_col, vertical_alignment="top")]]
 
-    window = sg.Window("Digit Recognition", layout, finalize=True)
-
-    fig = Figure(figsize=(5.0, 2.3), dpi=100)
-    ax = fig.add_subplot(111)
-    ax.set_title("Training Error (MSE)")
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Error")
-    (err_line,) = ax.plot([], [], linewidth=1.5)
-    ax.grid(True, alpha=0.25)
-
-    plot_canvas_elem = window["-PLOT-"].TKCanvas
-    plot_canvas = FigureCanvasTkAgg(fig, master=plot_canvas_elem)
-    plot_canvas.draw()
-    plot_canvas.get_tk_widget().pack(side="top", fill="both", expand=1)
-
-    def update_error_plot(errors: List[float]) -> None:
-        if not errors:
-            err_line.set_data([], [])
-            ax.relim()
-            ax.autoscale_view()
-            plot_canvas.draw_idle()
-            return
-
-        xs = np.arange(1, len(errors) + 1, dtype=float)
-        ys = np.array(errors, dtype=float)
-        err_line.set_data(xs, ys)
-
-        ax.set_xlim(1, max(2, len(errors)))
-        ymin = float(np.min(ys))
-        ymax = float(np.max(ys))
-        if ymin == ymax:
-            ymax = ymin + 1e-6
-        pad = (ymax - ymin) * 0.10
-        ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
-        plot_canvas.draw_idle()
+    window = sg.Window("Letter Recognition", layout, finalize=True)
 
     grid_state = PixelGrid(GRID_ROWS, GRID_COLS)
     dataset = Dataset()
