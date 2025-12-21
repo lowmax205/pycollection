@@ -4,15 +4,11 @@ Uses OpenCV + a small fuzzy logic system to choose an unsharp-mask amount based 
 - blur score (variance of Laplacian)
 - noise score (high-frequency energy)
 
-Run (webcam, default):
+Run (webcam only):
     python fuzzy_img_sharpen.py
     python fuzzy_img_sharpen.py --camera 1
 
-Run (image file):
-    python fuzzy_img_sharpen.py --input path/to/image.jpg
-    python fuzzy_img_sharpen.py --input in.jpg --output out.jpg
-
-Controls (webcam):
+Controls:
 - Press 'q' or ESC to quit
 - Press 's' to save a snapshot (uses --output if provided)
 
@@ -245,10 +241,9 @@ def apply_unsharp(bgr: np.ndarray, amount: float) -> np.ndarray:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fuzzy Adaptive Sharpening (OpenCV)")
-    p.add_argument("--input", help="Input image path (optional; if omitted uses webcam)")
     p.add_argument("--camera", type=int, default=0, help="Webcam index (default: 0)")
     p.add_argument("--mirror", action="store_true", help="Mirror the webcam image")
-    p.add_argument("--output", help="Output image path (image mode), or snapshot path (webcam mode)")
+    p.add_argument("--output", help="Snapshot path when pressing 's'")
     p.add_argument("--no-show", action="store_true", help="Do not open preview windows")
     return p
 
@@ -322,38 +317,7 @@ def run_webcam(camera_index: int, mirror: bool, output_path: str | None, no_show
 
 def main() -> None:
     args = build_parser().parse_args()
-
-    if not args.input:
-        run_webcam(args.camera, args.mirror, args.output, args.no_show)
-        return
-
-    img = cv2.imread(args.input)
-    if img is None:
-        raise SystemExit(f"Could not read image: {args.input}")
-
-    system = build_system()
-    blur_var, noise_score = compute_features(img)
-
-    out = system.infer({"blur": blur_var, "noise": noise_score})
-    amount = float(out["amount"])
-
-    sharpened = apply_unsharp(img, amount)
-
-    print("--- Fuzzy Adaptive Sharpening ---")
-    print(f"laplacian_var={blur_var:.2f}  noise_score={noise_score:.2f}")
-    print(f"chosen_amount={amount:.3f}")
-
-    if args.output:
-        ok = cv2.imwrite(args.output, sharpened)
-        if not ok:
-            raise SystemExit(f"Could not write output: {args.output}")
-        print(f"saved={args.output}")
-
-    if not args.no_show and not args.output:
-        cv2.imshow("Original", img)
-        cv2.imshow("Sharpened", sharpened)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    run_webcam(args.camera, args.mirror, args.output, args.no_show)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """
-Combined (Single + Multi) letter recognition app using PySimpleGUI.
+Combined (Single + Multi) digit recognition app using PySimpleGUI.
 
 This script replaces separate single/multi scripts by offering a model toggle:
 - "Single" = single-layer perceptron (sigmoid)
@@ -16,7 +16,7 @@ Dataset format is compatible with the original scripts (JSON stored in *.txt):
   }
 
 Dependencies:
-  pip install numpy PySimpleGUI
+    pip install numpy PySimpleGUI matplotlib
 
 Run:
   python perceptron.py
@@ -30,6 +30,12 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+
+try:
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+except Exception as exc:  # pragma: no cover
+    raise SystemExit("matplotlib is required. Install with: pip install matplotlib") from exc
 
 # Note: the public PyPI `PySimpleGUI` package may be a limited/stub package.
 # We prefer the open-source drop-in fork when available.
@@ -93,22 +99,22 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
-        letter = letter.strip().upper()
-        if len(letter) != 1 or not letter.isalpha():
-            raise ValueError("Label must be a single letter A-Z")
+    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
+        digit = digit.strip()
+        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
+            raise ValueError("Label must be a single digit 0-9")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
             raise ValueError("Empty drawing")
 
-        if letter not in self.label_mapping:
+        if digit not in self.label_mapping:
             idx = len(self.label_mapping)
-            self.label_mapping[letter] = idx
-            self.reverse_label_mapping[idx] = letter
+            self.label_mapping[digit] = idx
+            self.reverse_label_mapping[idx] = digit
 
         self.samples.append(flat_pixels.astype(float).tolist())
-        self.labels.append(self.label_mapping[letter])
+        self.labels.append(self.label_mapping[digit])
 
     def stats_text(self) -> str:
         if not self.samples:
@@ -121,9 +127,9 @@ class Dataset:
 
         lines = [
             f"Total samples: {len(self.samples)}",
-            f"Unique letters: {len(self.label_mapping)}",
+            f"Unique digits: {len(self.label_mapping)}",
             "",
-            "Letter distribution:",
+            "Digit distribution:",
         ]
         for letter in sorted(counts.keys()):
             lines.append(f"  {letter}: {counts[letter]} samples")
@@ -150,6 +156,12 @@ class Dataset:
         ds.label_mapping = {str(k): int(v) for k, v in obj.get("label_mapping", {}).items()}
         rlm = obj.get("reverse_label_mapping", {})
         ds.reverse_label_mapping = {int(k): str(v) for k, v in rlm.items()}
+        for k in ds.label_mapping.keys():
+            if len(k) != 1 or not k.isdigit() or k not in "0123456789":
+                raise ValueError("Dataset contains non-digit labels; expected digits 0-9")
+        for v in ds.reverse_label_mapping.values():
+            if len(v) != 1 or not v.isdigit() or v not in "0123456789":
+                raise ValueError("Dataset contains non-digit labels; expected digits 0-9")
         return ds
 
     def save(self, path: str) -> None:
@@ -179,6 +191,12 @@ class SinglePerceptron:
         self.weights += X.T.dot(delta) * self.learning_rate
         self.bias += np.sum(delta, axis=0, keepdims=True) * self.learning_rate
         return float(np.mean((y - out) ** 2))
+
+    def train(self, X: np.ndarray, y: np.ndarray, epochs: int) -> List[float]:
+        errors: List[float] = []
+        for _ in range(int(epochs)):
+            errors.append(self.train_step(X, y))
+        return errors
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
@@ -214,6 +232,12 @@ class MultiLayerPerceptron:
         self.bias_hidden += np.sum(hidden_delta, axis=0, keepdims=True) * self.learning_rate
 
         return float(np.mean((y - out) ** 2))
+
+    def train(self, X: np.ndarray, y: np.ndarray, epochs: int) -> List[float]:
+        errors: List[float] = []
+        for _ in range(int(epochs)):
+            errors.append(self.train_step(X, y))
+        return errors
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
@@ -287,7 +311,7 @@ def run_app() -> None:
 
     # Left: drawing
     left_col = [
-        [sg.Text("Letter Recognition", font=("Segoe UI", 14, "bold"))],
+        [sg.Text("Digit Recognition", font=("Segoe UI", 14, "bold"))],
         [sg.Text("Draw (drag with mouse):")],
         [graph],
         [
@@ -299,7 +323,7 @@ def run_app() -> None:
             sg.Frame(
                 "Result",
                 [
-                    [sg.Text("Letter:", size=(7, 1)), sg.Text("—", key="-RESULT-", font=("Segoe UI", 24, "bold"))],
+                    [sg.Text("Digit:", size=(7, 1)), sg.Text("—", key="-RESULT-", font=("Segoe UI", 24, "bold"))],
                     [sg.Text("Confidence:", size=(10, 1)), sg.Text("", key="-CONF-")],
                     [sg.Text("Top-3:")],
                     [sg.Multiline("", key="-TOP3-", size=(22, 4), disabled=True, no_scrollbar=True)],
@@ -323,6 +347,11 @@ def run_app() -> None:
         ],
     )
 
+    plot_frame = sg.Frame(
+        "Error Curve",
+        [[sg.Canvas(size=(420, 200), key="-PLOT-")]],
+    )
+
     dataset_frame = sg.Frame(
         "Dataset",
         [
@@ -333,11 +362,45 @@ def run_app() -> None:
 
     log_frame = sg.Frame("Log", [[sg.Multiline("", key="-LOG-", size=(42, 12), autoscroll=True, disabled=True)]])
 
-    right_col = [[train_frame], [dataset_frame], [log_frame]]
+    right_col = [[train_frame], [plot_frame], [dataset_frame], [log_frame]]
 
     layout = [[sg.Column(left_col, vertical_alignment="top"), sg.VSeparator(), sg.Column(right_col, vertical_alignment="top")]]
 
-    window = sg.Window("Letter Recognition", layout, finalize=True)
+    window = sg.Window("Digit Recognition", layout, finalize=True)
+
+    fig = Figure(figsize=(5.0, 2.3), dpi=100)
+    ax = fig.add_subplot(111)
+    ax.set_title("Training Error (MSE)")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Error")
+    (err_line,) = ax.plot([], [], linewidth=1.5)
+    ax.grid(True, alpha=0.25)
+
+    plot_canvas_elem = window["-PLOT-"].TKCanvas
+    plot_canvas = FigureCanvasTkAgg(fig, master=plot_canvas_elem)
+    plot_canvas.draw()
+    plot_canvas.get_tk_widget().pack(side="top", fill="both", expand=1)
+
+    def update_error_plot(errors: List[float]) -> None:
+        if not errors:
+            err_line.set_data([], [])
+            ax.relim()
+            ax.autoscale_view()
+            plot_canvas.draw_idle()
+            return
+
+        xs = np.arange(1, len(errors) + 1, dtype=float)
+        ys = np.array(errors, dtype=float)
+        err_line.set_data(xs, ys)
+
+        ax.set_xlim(1, max(2, len(errors)))
+        ymin = float(np.min(ys))
+        ymax = float(np.max(ys))
+        if ymin == ymax:
+            ymax = ymin + 1e-6
+        pad = (ymax - ymin) * 0.10
+        ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
+        plot_canvas.draw_idle()
 
     grid_state = PixelGrid(GRID_ROWS, GRID_COLS)
     dataset = Dataset()
@@ -453,6 +516,8 @@ def run_app() -> None:
             log_interval = max(1, epochs // 10)
             errors: List[float] = []
 
+            update_error_plot([])
+
             for ep in range(epochs):
                 if model_single is not None:
                     err = model_single.train_step(X, y)
@@ -462,7 +527,10 @@ def run_app() -> None:
                 window["-PROG-"].update(current_count=ep + 1)
                 if (ep + 1) % log_interval == 0 or ep == 0:
                     log(f"Epoch {ep + 1}/{epochs} - Error: {err:.6f}")
+                    update_error_plot(errors)
                 window.refresh()
+
+            update_error_plot(errors)
 
             if model_single is not None:
                 preds = model_single.predict(X)
@@ -486,7 +554,7 @@ def run_app() -> None:
 
             vec = grid_state.to_flat().reshape(1, -1)
             if int(np.sum(vec)) == 0:
-                sg.popup("Draw a letter first.", title="Recognize")
+                sg.popup("Draw a digit first.", title="Recognize")
                 continue
 
             pred = active_model.predict(vec)[0]

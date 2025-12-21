@@ -4,15 +4,11 @@ Uses OpenCV + a small fuzzy logic system to choose a gamma value based on:
 - mean brightness
 - dark pixel ratio
 
-Run (webcam, default):
+Run (webcam only):
     python fuzzy_img_brightness.py
     python fuzzy_img_brightness.py --camera 1
 
-Run (image file):
-    python fuzzy_img_brightness.py --input path/to/image.jpg
-    python fuzzy_img_brightness.py --input in.jpg --output out.jpg
-
-Controls (webcam):
+Controls:
 - Press 'q' or ESC to quit
 - Press 's' to save a snapshot (uses --output if provided)
 
@@ -237,10 +233,9 @@ def apply_gamma(bgr: np.ndarray, gamma: float) -> np.ndarray:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fuzzy Brightness Correction (OpenCV)")
-    p.add_argument("--input", help="Input image path (optional; if omitted uses webcam)")
     p.add_argument("--camera", type=int, default=0, help="Webcam index (default: 0)")
     p.add_argument("--mirror", action="store_true", help="Mirror the webcam image")
-    p.add_argument("--output", help="Output image path (image mode), or snapshot path (webcam mode)")
+    p.add_argument("--output", help="Snapshot path when pressing 's'")
     p.add_argument("--no-show", action="store_true", help="Do not open preview windows")
     return p
 
@@ -315,38 +310,7 @@ def run_webcam(camera_index: int, mirror: bool, output_path: str | None, no_show
 
 def main() -> None:
     args = build_parser().parse_args()
-
-    if not args.input:
-        run_webcam(args.camera, args.mirror, args.output, args.no_show)
-        return
-
-    img = cv2.imread(args.input)
-    if img is None:
-        raise SystemExit(f"Could not read image: {args.input}")
-
-    system = build_system()
-    mean_brightness, dark_ratio = compute_features(img)
-
-    out = system.infer({"brightness": mean_brightness, "dark_ratio": dark_ratio})
-    gamma = float(out["gamma"])
-
-    corrected = apply_gamma(img, gamma)
-
-    print("--- Fuzzy Brightness Correction ---")
-    print(f"mean_brightness={mean_brightness:.2f}  dark_ratio={dark_ratio:.3f}")
-    print(f"chosen_gamma={gamma:.3f}")
-
-    if args.output:
-        ok = cv2.imwrite(args.output, corrected)
-        if not ok:
-            raise SystemExit(f"Could not write output: {args.output}")
-        print(f"saved={args.output}")
-
-    if not args.no_show and not args.output:
-        cv2.imshow("Original", img)
-        cv2.imshow("Corrected", corrected)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    run_webcam(args.camera, args.mirror, args.output, args.no_show)
 
 
 if __name__ == "__main__":

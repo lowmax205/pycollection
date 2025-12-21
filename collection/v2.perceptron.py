@@ -1,5 +1,5 @@
 """
-Combined (Single + MLP) letter recognition app using ttkbootstrap.
+Combined (Single + MLP) digit recognition app using ttkbootstrap.
 
 UI library: ttkbootstrap (themed tkinter)
 Model toggle:
@@ -9,7 +9,7 @@ Model toggle:
 Dataset format matches the original scripts (JSON inside .txt).
 
 Dependencies:
-  pip install numpy ttkbootstrap
+    pip install numpy ttkbootstrap matplotlib
 
 Run:
   python perceptron.py
@@ -23,6 +23,12 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import numpy as np
+
+try:
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+except Exception as exc:  # pragma: no cover
+    raise SystemExit("matplotlib is required. Install with: pip install matplotlib") from exc
 
 try:
     import ttkbootstrap as tb
@@ -70,22 +76,22 @@ class Dataset:
     def input_size(self) -> int:
         return self.grid_rows * self.grid_cols
 
-    def add(self, letter: str, flat_pixels: np.ndarray) -> None:
-        letter = letter.strip().upper()
-        if len(letter) != 1 or not letter.isalpha():
-            raise ValueError("Label must be a single letter A-Z")
+    def add(self, digit: str, flat_pixels: np.ndarray) -> None:
+        digit = digit.strip()
+        if len(digit) != 1 or not digit.isdigit() or digit not in "0123456789":
+            raise ValueError("Label must be a single digit 0-9")
         if flat_pixels.shape != (self.input_size,):
             raise ValueError(f"Expected flat pixel vector of shape ({self.input_size},)")
         if int(np.sum(flat_pixels)) == 0:
             raise ValueError("Empty drawing")
 
-        if letter not in self.label_mapping:
+        if digit not in self.label_mapping:
             idx = len(self.label_mapping)
-            self.label_mapping[letter] = idx
-            self.reverse_label_mapping[idx] = letter
+            self.label_mapping[digit] = idx
+            self.reverse_label_mapping[idx] = digit
 
         self.samples.append(flat_pixels.astype(float).tolist())
-        self.labels.append(self.label_mapping[letter])
+        self.labels.append(self.label_mapping[digit])
 
     def to_json_obj(self) -> dict:
         return {
@@ -108,6 +114,12 @@ class Dataset:
         ds.label_mapping = {str(k): int(v) for k, v in obj.get("label_mapping", {}).items()}
         rlm = obj.get("reverse_label_mapping", {})
         ds.reverse_label_mapping = {int(k): str(v) for k, v in rlm.items()}
+        for k in ds.label_mapping.keys():
+            if len(k) != 1 or not k.isdigit() or k not in "0123456789":
+                raise ValueError("Dataset contains non-digit labels; expected digits 0-9")
+        for v in ds.reverse_label_mapping.values():
+            if len(v) != 1 or not v.isdigit() or v not in "0123456789":
+                raise ValueError("Dataset contains non-digit labels; expected digits 0-9")
         return ds
 
     def save(self, path: str) -> None:
@@ -131,9 +143,9 @@ class Dataset:
 
         lines = [
             f"Total samples: {len(self.samples)}",
-            f"Unique letters: {len(self.label_mapping)}",
+            f"Unique digits: {len(self.label_mapping)}",
             "",
-            "Letter distribution:",
+            "Digit distribution:",
         ]
         for letter in sorted(counts.keys()):
             lines.append(f"  {letter}: {counts[letter]} samples")
@@ -156,6 +168,12 @@ class SinglePerceptron:
         self.weights += X.T.dot(delta) * self.learning_rate
         self.bias += np.sum(delta, axis=0, keepdims=True) * self.learning_rate
         return float(np.mean((y - out) ** 2))
+
+    def train(self, X: np.ndarray, y: np.ndarray, epochs: int) -> List[float]:
+        errors: List[float] = []
+        for _ in range(int(epochs)):
+            errors.append(self.train_step(X, y))
+        return errors
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
@@ -192,6 +210,12 @@ class MultiLayerPerceptron:
 
         return float(np.mean((y - out) ** 2))
 
+    def train(self, X: np.ndarray, y: np.ndarray, epochs: int) -> List[float]:
+        errors: List[float] = []
+        for _ in range(int(epochs)):
+            errors.append(self.train_step(X, y))
+        return errors
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.forward(X)
 
@@ -216,7 +240,7 @@ class PixelGrid:
 class App:
     def __init__(self) -> None:
         self.root = tb.Window(themename="flatly")
-        self.root.title("Letter Recognition")
+        self.root.title("Digit Recognition")
         self.root.geometry("1150x680")
         self.root.minsize(980, 600)
 
@@ -225,6 +249,11 @@ class App:
 
         self.model_single: Optional[SinglePerceptron] = None
         self.model_mlp: Optional[MultiLayerPerceptron] = None
+
+        self._fig: Optional[Figure] = None
+        self._ax = None
+        self._err_line = None
+        self._plot_canvas: Optional[FigureCanvasTkAgg] = None
 
         self._dragging = False
         self._rect_ids: List[List[int]] = [[0 for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
@@ -281,6 +310,9 @@ class App:
         train_tab = tb.Labelframe(right, text="Training", padding=12)
         train_tab.pack(fill=X)
 
+        plot_tab = tb.Labelframe(right, text="Error Curve", padding=12)
+        plot_tab.pack(fill=BOTH, expand=False, pady=(10, 0))
+
         data_tab = tb.Labelframe(right, text="Dataset", padding=12)
         data_tab.pack(fill=BOTH, expand=True, pady=(10, 0))
 
@@ -332,6 +364,18 @@ class App:
         self.progress.pack(fill=X, pady=(14, 6))
 
         tb.Button(train_tab, text="Train", command=self.train, bootstyle="primary").pack(anchor="w")
+
+        self._fig = Figure(figsize=(5.2, 2.2), dpi=100)
+        self._ax = self._fig.add_subplot(111)
+        self._ax.set_title("Training Error (MSE)")
+        self._ax.set_xlabel("Epoch")
+        self._ax.set_ylabel("Error")
+        (self._err_line,) = self._ax.plot([], [], linewidth=1.5)
+        self._ax.grid(True, alpha=0.25)
+
+        self._plot_canvas = FigureCanvasTkAgg(self._fig, master=plot_tab)
+        self._plot_canvas.draw()
+        self._plot_canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
         # Dataset
         btns = tb.Frame(data_tab)
@@ -463,6 +507,8 @@ class App:
         self._log(f"Epochs: {epochs}")
         self._log(f"Training samples: {len(X)}")
 
+        self._update_error_plot([])
+
         self.progress.configure(value=0)
         self.root.update_idletasks()
 
@@ -479,7 +525,10 @@ class App:
             self.progress.configure(value=(ep + 1) / epochs * 100)
             if (ep + 1) % log_interval == 0 or ep == 0:
                 self._log(f"Epoch {ep + 1}/{epochs} - Error: {err:.6f}")
+                self._update_error_plot(errors)
             self.root.update()
+
+        self._update_error_plot(errors)
 
         if self.model_single is not None:
             preds = self.model_single.predict(X)
@@ -494,6 +543,30 @@ class App:
         self._log(f"Final Error: {errors[-1]:.6f}")
         self._log(f"Training Accuracy: {acc:.2f}%")
 
+    def _update_error_plot(self, errors: List[float]) -> None:
+        if self._ax is None or self._err_line is None or self._plot_canvas is None:
+            return
+
+        if not errors:
+            self._err_line.set_data([], [])
+            self._ax.relim()
+            self._ax.autoscale_view()
+            self._plot_canvas.draw_idle()
+            return
+
+        xs = np.arange(1, len(errors) + 1, dtype=float)
+        ys = np.array(errors, dtype=float)
+        self._err_line.set_data(xs, ys)
+
+        self._ax.set_xlim(1, max(2, len(errors)))
+        ymin = float(np.min(ys))
+        ymax = float(np.max(ys))
+        if ymin == ymax:
+            ymax = ymin + 1e-6
+        pad = (ymax - ymin) * 0.10
+        self._ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
+        self._plot_canvas.draw_idle()
+
     def recognize(self) -> None:
         model = self._active_model()
         if model is None:
@@ -502,7 +575,7 @@ class App:
 
         vec = self.grid.to_flat().reshape(1, -1)
         if int(np.sum(vec)) == 0:
-            messagebox.showwarning("Recognize", "Draw a letter first.")
+            messagebox.showwarning("Recognize", "Draw a digit first.")
             return
 
         pred = model.predict(vec)[0]
